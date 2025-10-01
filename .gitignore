@@ -1,0 +1,49 @@
+### Rust ###
+# Compiled files
+/target/
+# Cargo package output
+/**/Cargo.lock
+
+# Generated files
+/build/
+
+# Docs
+/doc/
+
+### Editor/IDE ###
+# VS Code
+/.vscode/
+
+# JetBrains
+/.idea/
+
+# Sublime Text
+/*.sublime-project
+/*.sublime-workspace
+
+### OS ###
+# Windows thumbnail cache files
+Thumbs.db
+ehthumbs.db
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+### Others ###
+# Mac
+.DS_Store
+
+# Logs
+.log
+
+# Secret/environment files
+.env
+
+# Binary artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Backup files
+*~
+*.swp
