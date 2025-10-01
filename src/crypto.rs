@@ -4,6 +4,9 @@ use argon2::Argon2;
 use rand::RngCore;
 use anyhow::Result;
 
+
+// aes-256-gcm is used for encryption and decryption of data
+// argon2 is used for key derivation from the master password
 pub fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; 32]> {
     // Derive a 32-byte key using Argon2id with default params for now
     let argon2 = Argon2::default();

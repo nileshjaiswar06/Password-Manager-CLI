@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+// Serialize - turn a Rust struct into JSON (or bytes).
+// Deserialize - turn JSON (or bytes) into a Rust struct.
+// Debug - turn a Rust struct into a string.
+// Clone - copy a Rust struct.
 pub struct Entry {
     pub name: String,
     pub username: Option<String>,

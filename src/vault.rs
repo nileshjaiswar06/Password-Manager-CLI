@@ -52,22 +52,27 @@ impl VaultApp {
         let pt = crypto::decrypt(&ct, &key, &nonce)?;
         let mut entries: Vec<Entry> = serde_json::from_slice(&pt)?;
         // prompt for fields
+
         println!("username (empty to skip):");
         let mut username = String::new();
         std::io::stdin().read_line(&mut username)?;
         let username = username.trim().to_string();
+
         println!("url (empty to skip):");
         let mut url = String::new();
         std::io::stdin().read_line(&mut url)?;
         let url = url.trim().to_string();
+
         println!("notes (empty to skip):");
         let mut notes = String::new();
         std::io::stdin().read_line(&mut notes)?;
         let notes = notes.trim().to_string();
+
         println!("password (leave empty to auto-generate):");
         let mut password = String::new();
         std::io::stdin().read_line(&mut password)?;
         let password = password.trim().to_string();
+
     let password = if password.is_empty() { password_generator(16, true) } else { password };
         let entry = Entry {
             name: name.to_string(),
@@ -76,7 +81,9 @@ impl VaultApp {
             notes: if notes.is_empty() { None } else { Some(notes) },
             password,
         };
+
         entries.push(entry);
+
         let pt = serde_json::to_vec(&entries)?;
         let (ct, nonce) = crypto::encrypt(&pt, &key)?;
         let envelope = VaultFile {
@@ -85,6 +92,7 @@ impl VaultApp {
             nonce: general_purpose::STANDARD.encode(&nonce),
             ciphertext: general_purpose::STANDARD.encode(&ct),
         };
+
         storage::write_envelope(&self.path, &envelope)?;
         println!("Entry added.");
         Ok(())
@@ -99,6 +107,7 @@ impl VaultApp {
         let ct = general_purpose::STANDARD.decode(&envelope.ciphertext)?;
         let pt = crypto::decrypt(&ct, &key, &nonce)?;
         let entries: Vec<Entry> = serde_json::from_slice(&pt)?;
+
         if let Some(e) = entries.into_iter().find(|e| e.name == name) {
             if copy {
                 #[cfg(feature = "clipboard")]
@@ -142,10 +151,12 @@ impl VaultApp {
         let mut entries: Vec<Entry> = serde_json::from_slice(&pt)?;
         let before = entries.len();
         entries.retain(|e| e.name != name);
+        
         if entries.len() == before {
             println!("Entry not found");
             return Ok(());
         }
+
         let pt = serde_json::to_vec(&entries)?;
         let (ct, nonce) = crypto::encrypt(&pt, &key)?;
         let envelope = VaultFile {
