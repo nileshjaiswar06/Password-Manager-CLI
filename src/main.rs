@@ -18,6 +18,9 @@ struct Cli {
     /// Disable clipboard operations (even if compiled with clipboard feature)
     #[arg(long)]
     no_clipboard: bool,
+    /// Disable creating a .bak backup when writing the vault
+    #[arg(long)]
+    no_backup: bool,
 
     #[command(subcommand)]
     command: Commands,
@@ -67,6 +70,7 @@ fn main() -> anyhow::Result<()> {
 
     let mut app = VaultApp::new(vault_path);
     app.set_no_clipboard(cli.no_clipboard);
+    app.set_no_backup(cli.no_backup);
 
     match cli.command {
     Commands::Init { force } => app.init(force)?,

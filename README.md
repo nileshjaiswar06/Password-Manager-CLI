@@ -49,38 +49,61 @@ Default vault path
 
 Storage envelope (required fields)
 ---------------------------------
-The vault file is a JSON envelope with these required fields (all required by current code):
+The vault file is a JSON envelope. The current code expects all of the following fields to be present. Missing or malformed fields will cause decryption to fail with a descriptive error.
 
-- `version` (string): vault format version, e.g. `"1.0"`.
-- `kdf` (object): KDF descriptor object, contains:
-  - `type` (string): currently `"argon2id"`.
-  - `params` (object): Argon2 params (current keys used):
+Top-level fields (all required):
+
+- `version` (string): vault format version, for example `"1.0"`. Used for future format migrations.
+- `kdf` (object): KDF descriptor object. The code currently understands the following shape:
+  - `type` (string): currently must be the literal string `"argon2id"`.
+  - `params` (object): Argon2 parameter object (all integers):
     - `mem_kib` (integer): memory cost in KiB (e.g. `65536` for 64 MiB).
     - `iterations` (integer): number of iterations (e.g. `3`).
     - `parallelism` (integer): parallelism degree (e.g. `1`).
-  - `salt` (string): base64-encoded salt used by Argon2.
-- `nonce` (string): base64-encoded AES-GCM nonce used for the ciphertext.
-- `ciphertext` (string): base64-encoded AES-GCM ciphertext (this encrypts the JSON list of entries).
+  - `salt` (string): base64-encoded salt used by Argon2 (must be present and valid base64).
+- `nonce` (string): base64-encoded AES-GCM nonce used to encrypt the ciphertext (must decode to the expected nonce length for AES-GCM).
+- `ciphertext` (string): base64-encoded AES-GCM ciphertext. When decrypted with the derived key and nonce this yields the JSON payload described below.
+
+Notes:
+- The `kdf` object is read and used to derive the encryption key; its `salt` and `params` must match what was used at `init` time.
+- The code does not attempt to be clever about missing fields: if any required field is absent or invalid the operation will fail with an explanatory error. This keeps the runtime checks explicit and auditable.
 
 Entry JSON structure (decrypted)
 --------------------------------
-When decrypted, the vault contains a JSON array of entries. Each entry has these fields:
+When decrypted, the vault contains a JSON array of entries. The code reads and writes entries using serde, so the JSON payload must be a top-level array. Each array element (entry) must have the following fields:
 
-- `name` (string) — unique identifier for the entry (used with `get`, `rm`).
-- `username` (string|null) — optional username.
+- `name` (string) — unique identifier for the entry (used with `get`, `rm`). It is expected to be unique within the vault; duplicate names may lead to surprising behavior.
+- `username` (string|null) — optional username. Use JSON `null` for absent values.
 - `url` (string|null) — optional URL for the site/service.
 - `notes` (string|null) — optional notes.
 - `password` (string) — the password stored for this entry.
 
+Implementation note: entries are serialized/deserialized using serde; types and missing fields should match the struct definitions in `src/models.rs`.
+
 Security & limitations (current)
 --------------------------------
-- KDF defaults: Argon2id with mem_kib=65536 (64 MiB), iterations=3, parallelism=1. These are currently the defaults used at `init` and stored in the envelope. You can change them in code; a future `rekey` command will let you migrate.
-- Zeroization: the derived key is wrapped in `Zeroizing` so it is zeroed on drop. The master password string is dropped as soon as the key is derived. However, decrypted plaintext buffers are not yet fully wrapped in `Zeroizing` in every place — we'll add that in the next iteration.
-- Clipboard: clipboard support is optional and enabled via the `clipboard` cargo feature. Copying to clipboard prints a short security warning. Clipboard clearing after `--timeout` is best-effort using a spawned thread — platform-specific secure clearing is planned as an optional enhancement.
-- Backups: a best-effort `.bak` copy is made before overwriting the vault file. This behavior is automatic; a configurable `--no-backup` option is not implemented yet.
-- Atomic writes: the vault write uses a temporary file and rename for atomicity on the same filesystem, but cross-filesystem rename/edge-cases are not handled.
-- No `rekey` command yet: migrating to new KDF params or re-encrypting with a new master password is a planned future feature.
-- Tests and CI: the test suite and GitHub Actions are not yet added. Integration tests for encryption/decryption and end-to-end flows will be added next.
+
+The project aims to demonstrate secure vault primitives and a usable CLI. That said, this is an early-stage implementation and has known limitations you should be aware of before trusting it with real secrets.
+
+What is implemented (positive guarantees):
+
+- Argon2id key derivation: Argon2id (via the `argon2` crate) is used to derive a 256-bit key from the master password and a per-vault salt. The used Argon2 parameters are stored in the `kdf.params` object in the envelope so that decryption can re-derive the key.
+- AES-256-GCM authenticated encryption: all secrets are encrypted using AES-GCM (via the `aes-gcm` crate) and a random nonce. The `nonce` and the ciphertext are stored in the envelope.
+- Atomic writes: writes are performed by writing a temporary file and renaming it into place. This provides atomic replacement on most filesystems.
+- Backups: when overwriting an existing vault file the code attempts to create a `.bak` copy of the previous file (best-effort).
+- Memory hygiene: derived keys are wrapped in `Zeroizing` to reduce their lifetime in memory; master password strings are dropped promptly after use.
+
+Known limitations and caveats (please read carefully):
+
+- Partial zeroization: while the derived key is zeroized on drop, not every transient plaintext buffer is currently wrapped with `Zeroizing` in every code path. Some decrypted bytes and intermediate Strings may remain in memory until the OS reclaims them. We plan to strengthen zeroization in a follow-up.
+- Clipboard behavior is best-effort: clipboard support is optional and only available when you build with the `clipboard` cargo feature. The `--timeout` option spawns a background thread that attempts to clear the clipboard after the requested seconds; this is best-effort and platform-dependent. For security-critical uses do not rely solely on this mechanism.
+- Backup policy is configurable at runtime: you can opt out of creating `.bak` files using the `--no-backup` flag on the CLI. (This flag is implemented.)
+- Cross-filesystem atomicity: the current atomic write uses `rename` which is atomic on the same filesystem but may fail or fall back to non-atomic behavior across mounted filesystems. The code attempts parent directory creation but does not handle every cross-filesystem edge case.
+- No rekey/migration utility: there is no `rekey` command yet. If you change KDF parameters in code or want to rotate your master password you'll need to implement a migration path or wait for the planned `rekey` command.
+- No remote or multi-device sync: this project is strictly local and does not attempt to sync vault files across machines.
+- Limited testing: unit and integration tests are not included yet. Before using this in production add tests covering serialization, encrypt/decrypt round-trips, and end-to-end CLI flows.
+
+Security recommendation: Treat this project as an educational prototype. If you plan to use it for real secrets, audit the code, add comprehensive tests, and consider platform-specific secure-erase strategies for cleared clipboard contents and memory.
 
 Usage examples
 --------------
