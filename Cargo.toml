@@ -22,3 +22,8 @@ sha2 = "0.10"
 [features]
 default = []
 clipboard = ["dep:clipboard"]
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "2.1"
+tempfile = "3.6"

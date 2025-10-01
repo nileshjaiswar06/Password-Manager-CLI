@@ -39,3 +39,28 @@ pub fn read_envelope(path: &Path) -> Result<VaultFile> {
     let v: VaultFile = serde_json::from_str(&s).context("parsing vault file JSON")?;
     Ok(v)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+    use serde_json::json;
+    use base64::{engine::general_purpose, Engine as _};
+    use crate::models::VaultFile;
+
+    #[test]
+    fn write_and_read_envelope() -> anyhow::Result<()> {
+        let salt = b"testsalt12345678";
+        let envelope = VaultFile {
+            version: "1.0".to_string(),
+            kdf: json!({"type": "argon2id", "salt": general_purpose::STANDARD.encode(salt)}),
+            nonce: general_purpose::STANDARD.encode(b"somenonce123"),
+            ciphertext: general_purpose::STANDARD.encode(b"cipher"),
+        };
+        let tmp = NamedTempFile::new()?;
+        write_envelope(tmp.path(), &envelope, true)?;
+        let read = read_envelope(tmp.path())?;
+        assert_eq!(read.version, "1.0");
+        Ok(())
+    }
+}

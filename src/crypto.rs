@@ -52,3 +52,50 @@ pub fn decrypt(ciphertext: &[u8], key: &[u8; 32], nonce: &[u8]) -> Result<Vec<u8
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
     Ok(pt)
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+    use crate::storage;
+    use crate::models::VaultFile;
+    use serde_json::json;
+    use base64::{engine::general_purpose, Engine as _};
+
+    #[test]
+    fn crypto_roundtrip() -> anyhow::Result<()> {
+        let password = "unit-test";
+        let salt = generate_salt(16);
+        let params = KdfParams { mem_kib: 32, iterations: 1, parallelism: 1 };
+        let keyz = derive_key(password, &salt, &params)?;
+        let key: &[u8; 32] = &*keyz;
+
+        let plaintext = b"hello world";
+        let (ct, nonce) = encrypt(plaintext, key)?;
+        let pt = decrypt(&ct, key, &nonce)?;
+        assert_eq!(pt, plaintext);
+        Ok(())
+    }
+
+    #[test]
+    fn storage_roundtrip_with_envelope() -> anyhow::Result<()> {
+    let entries: Vec<crate::models::Entry> = vec![];
+        let pt = serde_json::to_vec(&entries)?;
+        let key = [0u8; 32];
+        let (ct, nonce) = encrypt(&pt, &key)?;
+        let salt = generate_salt(16);
+        let envelope = VaultFile {
+            version: "1.0".to_string(),
+            kdf: json!({"type": "argon2id", "salt": general_purpose::STANDARD.encode(&salt)}),
+            nonce: general_purpose::STANDARD.encode(&nonce),
+            ciphertext: general_purpose::STANDARD.encode(&ct),
+        };
+
+        let tmp = NamedTempFile::new()?;
+        storage::write_envelope(tmp.path(), &envelope, true)?;
+        let read = storage::read_envelope(tmp.path())?;
+        assert_eq!(read.version, "1.0");
+        Ok(())
+    }
+}
