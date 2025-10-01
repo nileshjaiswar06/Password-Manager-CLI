@@ -15,6 +15,9 @@ struct Cli {
     /// Path to the vault file (defaults to OS-specific location)
     #[arg(short, long)]
     file: Option<PathBuf>,
+    /// Disable clipboard operations (even if compiled with clipboard feature)
+    #[arg(long)]
+    no_clipboard: bool,
 
     #[command(subcommand)]
     command: Commands,
@@ -23,7 +26,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Initialize a new vault
-    Init,
+    Init { #[arg(long)] force: bool },
     /// Add an entry
     Add {
         #[arg(short, long)]
@@ -62,10 +65,11 @@ fn main() -> anyhow::Result<()> {
         None => default_vault_path(),
     };
 
-    let app = VaultApp::new(vault_path);
+    let mut app = VaultApp::new(vault_path);
+    app.set_no_clipboard(cli.no_clipboard);
 
     match cli.command {
-        Commands::Init => app.init()?,
+    Commands::Init { force } => app.init(force)?,
         Commands::Add { name } => app.add(&name)?,
         Commands::Get { name, copy, timeout } => app.get(&name, copy, timeout)?,
         Commands::Rm { name } => app.rm(&name)?,
