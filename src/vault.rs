@@ -4,7 +4,7 @@ use crate::crypto;
 use anyhow::Result;
 use std::path::PathBuf;
 use rpassword::read_password;
-use rand::{Rng, RngCore};
+use rand::RngCore;
 use base64::{engine::general_purpose, Engine as _};
 use serde_json::json;
 
@@ -114,8 +114,8 @@ impl VaultApp {
                 {
                     use clipboard::ClipboardProvider;
                     use clipboard::ClipboardContext;
-                    let mut ctx: ClipboardContext = ClipboardProvider::new()?;
-                    ctx.set_contents(e.password.clone())?;
+                    let mut ctx: ClipboardContext = ClipboardProvider::new().map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                    ctx.set_contents(e.password.clone()).map_err(|e| anyhow::anyhow!(e.to_string()))?;
                     println!("Password copied to clipboard");
                     if let Some(sec) = timeout {
                         std::thread::spawn(move || {
