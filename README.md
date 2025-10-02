@@ -4,6 +4,119 @@ A memory-safe Rust CLI vault that generates, encrypts, and stores passwords loca
 
 This project demonstrates secure, offline password management using Rust's safety guarantees. It uses Argon2id for key derivation and AES-256-GCM for authenticated encryption.
 
+Purpose & goals
+---------------
+
+This project is an educational, practical reference implementation of a local, encrypted password vault implemented in Rust. The goals are:
+
+- Demonstrate how to derive encryption keys safely from a master password using Argon2id and store parameters needed for reproducible decryption.
+- Show how to perform authenticated encryption with AES-256-GCM and store ciphertext in a small, versioned JSON envelope.
+- Provide a simple, scriptable CLI for common password-manager flows (init, add, get, rm, list, generate).
+- Illustrate safe I/O patterns (atomic writes, backups) and memory-hygiene practices (zeroizing derived keys) suitable for a small production or educational project.
+
+This repository is not intended to be a fully-featured production password manager (no sync, limited platform clipboard hygiene, limited zeroization). Treat it as a building block and learning artifact.
+
+Project structure (current)
+--------------------------
+
+High-level file layout (important files):
+
+- `Cargo.toml` — dependency manifest and optional feature flags (e.g., `clipboard`).
+- `src/main.rs` — CLI parsing and top-level wiring (subcommands, global flags like `--file`, `--no-backup`, `--no-clipboard`).
+- `src/models.rs` — serde data models for vault envelope and entries.
+- `src/crypto.rs` — KDF (Argon2) and AES-GCM encrypt/decrypt helpers.
+- `src/storage.rs` — disk I/O helpers for reading/writing the JSON envelope, atomic writes and backups.
+- `src/vault.rs` — high-level vault operations implementing `init`, `add`, `get`, `rm`, `list`, and `gen` commands.
+- `README.md` / `SPEC.md` — documentation and spec for the vault format and CLI behavior.
+
+Repository layout (on-disk)
+---------------------------
+
+A quick tree of important files and folders in this repository (top-level):
+
+```
+Password-Manager-CLI/
+├── Cargo.toml                # Rust manifest (dependencies & features)
+├── README.md                 # Project documentation (this file)
+├── SPEC.md                   # Vault format and CLI spec
+├── LICENSE                   # Project license (MIT)
+├── src/
+│   ├── main.rs               # CLI wiring and entrypoint
+│   ├── vault.rs              # High-level vault operations and command handlers
+│   ├── crypto.rs             # KDF (Argon2) + AEAD (AES-GCM) helpers
+│   ├── storage.rs            # Read/write envelope, atomic write helpers
+│   └── models.rs             # serde data models for entries and envelope
+├── .github/                  # (optional) CI workflows (not present yet)
+└── tests/                    # (optional) integration tests (not present yet)
+```
+
+Feel free to add example configs, workflows, or an `examples/` folder for sample vault files.
+
+How it works (execution flow)
+----------------------------
+
+Typical operation flow (e.g., `get`):
+
+1. CLI parses arguments and locates the vault file (default OS path or `--file`).
+2. The code reads the JSON envelope and extracts KDF parameters and salt.
+3. The user is prompted for the master password (hidden). The code derives a 256-bit key using Argon2id and the stored salt/params.
+4. The key is used with AES-256-GCM and the stored nonce to decrypt the ciphertext into a JSON payload.
+5. The decrypted payload (a JSON array of entries) is parsed and the requested entry is printed or copied to the clipboard (if enabled).
+
+On `add` or `rm`, the code performs the reverse: decrypts the payload, modifies the entries, re-encrypts the new payload with a fresh nonce, and performs an atomic write to replace the vault file (with a best-effort `.bak` copy of the previous file).
+
+Why this project exists (motivation)
+-----------------------------------
+
+There are many mature password managers; this project exists to:
+
+- Teach and document the core primitives of a secure, offline vault in a compact codebase.
+- Demonstrate safe Rust patterns for handling secrets, I/O, and error handling with clear ownership.
+- Provide a scaffold for further experimentation (rekeying, sync adapters, hardware-backed keys) without starting from scratch.
+
+Dependency & design rationale
+-----------------------------
+
+Why these specific crates and choices were made (concise rationale):
+
+- `clap` (derive): industry-standard CLI parsing; expressive, well-tested and ergonomic for subcommands and flags.
+- `argon2`: provides Argon2id KDF; Argon2id is a modern, recommended KDF for password-based key derivation and is resistant to GPU/ASIC optimizations when configured correctly.
+- `aes-gcm`: provides a safe AEAD implementation (AES-256-GCM) for authenticated encryption — chosen because AEAD avoids silent tampering and provides both confidentiality and integrity.
+- `serde` / `serde_json`: easy, interoperable JSON serialization and parsing for the envelope; keeps the on-disk format readable and versionable.
+- `zeroize`: provides the `Zeroizing` wrapper to reduce the lifetime of sensitive key material in memory and zero it on drop.
+- `rpassword`: small, cross-platform prompt for hidden master-password input.
+- `rand`: secure randomness for salts, nonces, and password generation.
+- `base64`: compact encoding of binary fields for a JSON envelope.
+- `anyhow`: ergonomic error handling with context to produce helpful error messages during development and in logs.
+- `clipboard` (optional feature): convenience for copying passwords to the system clipboard; optional because some platforms and CI environments do not support it.
+
+Design trade-offs and notes:
+
+- JSON envelope (human-readable) was chosen for simplicity and inspectability; a binary format could be more compact but harder to debug during development.
+- Argon2 params are stored in the envelope to allow reproducible decryption and to enable a future `rekey` migration path.
+- AES-GCM requires a unique nonce for each encryption; the code uses a random nonce per write and stores it in the envelope.
+
+Improvements, follow-ups & roadmap
+----------------------------------
+
+Short-term/practical improvements (low-risk):
+
+- Add unit and integration tests covering encrypt/decrypt round-trips, `init` -> `add` -> `get` -> `rm` flows, and error cases.
+- Add a GitHub Actions workflow to run `cargo fmt -- --check`, `cargo clippy`, and `cargo test` on every PR.
+- Systematically wrap decrypted payloads and other transient secret buffers with `Zeroizing` to reduce secret lifetime in memory.
+
+Mid-term/security improvements:
+
+- Implement a `rekey` command that allows migrating KDF parameters and rotating the master password without losing entries.
+- Implement platform-specific secure clipboard clearing: use native APIs where available to better scrub clipboard contents and avoid leaving secrets in memory.
+- Support hardware-backed keys (YubiKey or TPM) as an optional unlock mechanism.
+
+Long-term/advanced features:
+
+- Add an optional authenticated sync adapter (git-backed or server) and conflict resolution for multi-device usage.
+- Add a plugin system or extension API so different storage backends or KDFs can be experimented with safely.
+- Formal audits and hardened release builds targeting secure deployment scenarios.
+
 Quick start
 -----------
 
@@ -142,6 +255,31 @@ Remove an entry:
 
 ```powershell
 cargo run -- rm -n mysite
+```
+
+Try it (quick commands)
+-----------------------
+
+These commands are quick, copy-paste friendly ways to exercise the main flows locally. They run the dev binary via `cargo run` so you can inspect behaviour and logs. Adjust `--file` to avoid clobbering any existing vault.
+
+```powershell
+# Initialize a new vault at a temporary path (prompts for master password)
+cargo run -- init --file C:\temp\vault.test.json.enc
+
+# Add an entry interactively (prompts; leave password blank to auto-generate)
+cargo run -- add -n testsite --file C:\temp\vault.test.json.enc
+
+# List entries
+cargo run -- list --file C:\temp\vault.test.json.enc
+
+# Get an entry and print password (no clipboard)
+cargo run -- get -n testsite --file C:\temp\vault.test.json.enc
+
+# Remove the test entry
+cargo run -- rm -n testsite --file C:\temp\vault.test.json.enc
+
+# Clean up: remove the test vault file
+Remove-Item C:\temp\vault.test.json.enc -ErrorAction SilentlyContinue
 ```
 
 Developer notes & next steps
