@@ -22,7 +22,7 @@ impl VaultApp {
     }
 
     pub fn set_no_clipboard(&mut self, v: bool) {
-        self.no_clipboard = v;
+        self.no_clipboard = v; 
     }
 
     pub fn set_no_backup(&mut self, v: bool) {
@@ -35,9 +35,32 @@ impl VaultApp {
             println!("Vault file already exists at {}. Use --force to overwrite.", self.path.display());
             return Ok(());
         }
-        println!("Master password:");
-        let pw = read_password()?;
-        // generate salt and kdf params
+        // Prefer VAULT_PASSWORD env var for non-interactive workflows (CI/tests).
+        let pw = if let Ok(envpw) = std::env::var("VAULT_PASSWORD") {
+            if !envpw.is_empty() {
+                envpw
+            } else {
+                // fall back to interactive prompt
+                println!("Master password:");
+                let p1 = read_password()?;
+                println!("Confirm master password:");
+                let p2 = read_password()?;
+                if p1 != p2 {
+                    anyhow::bail!("master passwords do not match");
+                }
+                p1
+            }
+        } else {
+            println!("Master password:");
+            let p1 = read_password()?;
+            println!("Confirm master password:");
+            let p2 = read_password()?;
+            if p1 != p2 {
+                anyhow::bail!("master passwords do not match");
+            }
+            p1
+        };
+    // generate salt and kdf params
         let salt = crypto::generate_salt(16);
         let kdf_params = crypto::KdfParams { mem_kib: 65536, iterations: 3, parallelism: 1 };
         let key = crypto::derive_key(&pw, &salt, &kdf_params)?;
@@ -57,7 +80,7 @@ impl VaultApp {
             ciphertext: general_purpose::STANDARD.encode(&ct),
         };
             storage::write_envelope(&self.path, &envelope, self.no_backup)?;
-        println!("Vault initialized.");
+        println!("Vault initialized and saved to {}", self.path.display());
         Ok(())
     }
 
@@ -79,8 +102,13 @@ impl VaultApp {
         }
         
         println!("Adding entry '{}'", name);
-        println!("Master password:");
-        let pw = read_password()?;
+        // read master password from VAULT_PASSWORD env var when available for tests/CI
+        let pw = if let Ok(envpw) = std::env::var("VAULT_PASSWORD") {
+            if !envpw.is_empty() { envpw } else { println!("Master password:"); read_password()? }
+        } else {
+            println!("Master password:");
+            read_password()?
+        };
         let envelope = storage::read_envelope(&self.path).with_context(|| format!("reading vault at {}", self.path.display()))?;
         let salt_str = envelope.kdf.get("salt").and_then(|s| s.as_str()).context("kdf.salt missing from envelope")?;
         let salt_b = base64::engine::general_purpose::STANDARD.decode(salt_str).context("decoding base64 salt")?;
@@ -88,9 +116,15 @@ impl VaultApp {
         let key = crypto::derive_key(&pw, &salt_b, &params)?;
         drop(pw);
         let key_ref: &[u8; 32] = &*key;
-        let nonce = general_purpose::STANDARD.decode(&envelope.nonce)?;
-        let ct = general_purpose::STANDARD.decode(&envelope.ciphertext)?;
-        let pt = crypto::decrypt(&ct, key_ref, &nonce).context("decrypting vault ciphertext")?;
+        let nonce = general_purpose::STANDARD.decode(&envelope.nonce).context("decoding base64 nonce")?;
+        let ct = general_purpose::STANDARD.decode(&envelope.ciphertext).context("decoding base64 ciphertext")?;
+        let pt = match crypto::decrypt(&ct, key_ref, &nonce) {
+            Ok(p) => p,
+            Err(_) => {
+                println!("Failed to decrypt vault: incorrect master password or corrupted vault.");
+                return Ok(());
+            }
+        };
         let pt = Zeroizing::new(pt);
         let mut entries: Vec<Entry> = serde_json::from_slice(&pt).context("parsing decrypted vault JSON")?;
         // prompt for fields
@@ -110,12 +144,19 @@ impl VaultApp {
         std::io::stdin().read_line(&mut notes)?;
         let notes = notes.trim().to_string();
 
-        println!("password (leave empty to auto-generate):");
-        let mut password = String::new();
-        std::io::stdin().read_line(&mut password)?;
-        let password = password.trim().to_string();
-
-    let password = if password.is_empty() { password_generator(16, true) } else { password };
+        // Allow ENTRY_PASSWORD env var for non-interactive entry creation (CI/tests).
+        let password_raw = if let Ok(ep) = std::env::var("ENTRY_PASSWORD") {
+            if !ep.is_empty() {
+                ep
+            } else {
+                println!("password (leave empty to auto-generate) — input will be hidden:");
+                read_password()?
+            }
+        } else {
+            println!("password (leave empty to auto-generate) — input will be hidden:");
+            read_password()?
+        };
+        let password = if password_raw.trim().is_empty() { password_generator(16, true) } else { password_raw.trim().to_string() };
         let entry = Entry {
             name: name.to_string(),
             username: if username.is_empty() { None } else { Some(username) },
@@ -143,12 +184,19 @@ impl VaultApp {
         };
 
             storage::write_envelope(&self.path, &envelope, self.no_backup).context("writing vault envelope to disk")?;
-        println!("Entry added.");
+        println!("Entry added and vault saved to {}", self.path.display());
         Ok(())
     }
 
     pub fn get(&self, name: &str, copy: bool, timeout: Option<u64>) -> Result<()> {
-        let pw = read_password().context("reading master password from TTY")?;
+        // read master password from env var if present
+        let pw = if let Ok(envpw) = std::env::var("VAULT_PASSWORD") {
+            if !envpw.is_empty() { envpw } else { println!("Master password:"); read_password()? }
+        } else {
+            println!("Master password:");
+            read_password()?
+        };
+        
         let envelope = storage::read_envelope(&self.path).with_context(|| format!("reading vault at {}", self.path.display()))?;
         let salt_str = envelope.kdf.get("salt").and_then(|s| s.as_str()).context("kdf.salt missing from envelope")?;
         let salt_b = base64::engine::general_purpose::STANDARD.decode(salt_str).context("decoding base64 salt")?;
@@ -209,7 +257,12 @@ impl VaultApp {
     if name.trim().is_empty() {
             anyhow::bail!("entry name cannot be empty");
         }
-        let pw = read_password().context("reading master password from TTY")?;
+        let pw = if let Ok(envpw) = std::env::var("VAULT_PASSWORD") {
+            if !envpw.is_empty() { envpw } else { println!("Master password:"); read_password()? }
+        } else {
+            println!("Master password:");
+            read_password()?
+        };
         let envelope = storage::read_envelope(&self.path).with_context(|| format!("reading vault at {}", self.path.display()))?;
         let salt_str = envelope.kdf.get("salt").and_then(|s| s.as_str()).context("kdf.salt missing from envelope")?;
         let salt_b = base64::engine::general_purpose::STANDARD.decode(salt_str).context("decoding base64 salt")?;
@@ -240,13 +293,19 @@ impl VaultApp {
             nonce: general_purpose::STANDARD.encode(&nonce),
             ciphertext: general_purpose::STANDARD.encode(&ct),
         };
-        storage::write_envelope(&self.path, &envelope, self.no_backup).context("writing vault envelope to disk")?;
-        println!("Entry removed.");
+    storage::write_envelope(&self.path, &envelope, self.no_backup).context("writing vault envelope to disk")?;
+        println!("Entry removed and vault saved to {}", self.path.display());
         Ok(())
     }
 
     pub fn list(&self) -> Result<()> {
-        let pw = read_password().context("reading master password from TTY")?;
+        // read master password from env var if present
+        let pw = if let Ok(envpw) = std::env::var("VAULT_PASSWORD") {
+            if !envpw.is_empty() { envpw } else { println!("Master password:"); read_password()? }
+        } else {
+            println!("Master password:");
+            read_password()?
+        };
         let envelope = storage::read_envelope(&self.path).with_context(|| format!("reading vault at {}", self.path.display()))?;
         let salt_str = envelope.kdf.get("salt").and_then(|s| s.as_str()).context("kdf.salt missing from envelope")?;
         let salt_b = base64::engine::general_purpose::STANDARD.decode(salt_str).context("decoding base64 salt")?;
