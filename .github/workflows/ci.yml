@@ -4,85 +4,84 @@ on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main ]
+  name: CI
 
-env:
-  CARGO_TERM_COLOR: always
+  on:
+    push:
+      branches: [ main ]
+    pull_request:
+      branches: [ main ]
 
-jobs:
-  test:
-    name: Test Suite
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+  env:
+    CARGO_TERM_COLOR: always
 
-      - name: Install Rust (actions-rs)
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: rustfmt,clippy
-          override: true
+  jobs:
+    test:
+      name: Test Suite
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
 
-      - name: Ensure rustfmt & clippy (fallback)
-        run: |
-          rustup component add --toolchain stable rustfmt || true
-          rustup component add --toolchain stable clippy || true
+        - name: Install Rust (actions-rs)
+          uses: actions-rs/toolchain@v1
+          with:
+            toolchain: stable
+            components: rustfmt,clippy
+            override: true
 
-      - name: Cache dependencies
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        - name: Ensure rustfmt & clippy (fallback)
+          run: |
+            rustup component add --toolchain stable rustfmt || true
+            rustup component add --toolchain stable clippy || true
 
-      - name: Check formatting
-        run: cargo fmt -- --check
+        - name: Cache dependencies
+          uses: actions/cache@v3
+          with:
+            path: |
+              ~/.cargo/registry
+              ~/.cargo/git
+              target/
+            key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Run clippy
-        run: cargo clippy -- -D warnings
+        - name: Check formatting
+          run: cargo fmt -- --check
 
-      - name: Run tests
-        run: cargo test --verbose
-        env:
-          VAULT_PASSWORD: test-password
+        - name: Run clippy
+          run: cargo clippy -- -D warnings
 
-      - name: Build release
-        run: cargo build --release
+        - name: Run tests
+          run: cargo test --verbose
+          env:
+            VAULT_PASSWORD: test-password
 
-  # Additional job for Windows compatibility
-  test-windows:
-    name: Test Suite (Windows)
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
+        - name: Build release
+          run: cargo build --release
 
-      - name: Install Rust (actions-rs)
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: rustfmt,clippy
-          override: true
+    test-windows:
+      name: Test Suite (Windows)
+      runs-on: windows-latest
+      steps:
+        - uses: actions/checkout@v4
 
-      - name: Ensure rustfmt & clippy (fallback)
-        run: |
-          rustup component add --toolchain stable rustfmt || true
-          rustup component add --toolchain stable clippy || true
+        - name: Install Rust (actions-rs)
+          uses: actions-rs/toolchain@v1
+          with:
+            toolchain: stable
+            components: rustfmt,clippy
+            override: true
 
-      - name: Run tests
-        run: cargo test --verbose
-        env:
-          VAULT_PASSWORD: test-password
+        - name: Ensure rustfmt & clippy (fallback)
+          run: |
+            rustup component add --toolchain stable rustfmt || true
+            rustup component add --toolchain stable clippy || true
 
-      - name: Build release
-        run: cargo build --release
-name: CI
+        - name: Run tests
+          run: cargo test --verbose
+          env:
+            VAULT_PASSWORD: test-password
 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
+        - name: Build release
+          run: cargo build --release
     branches: [ main ]
 
 env:
