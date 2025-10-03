@@ -14,15 +14,15 @@ This project is an educational, practical reference implementation of a local, e
 - Provide a simple, scriptable CLI for common password-manager flows (init, add, get, rm, list, generate).
 - Illustrate safe I/O patterns (atomic writes, backups) and memory-hygiene practices (zeroizing derived keys) suitable for a small production or educational project.
 
-This repository is not intended to be a fully-featured production password manager (no sync, limited platform clipboard hygiene, limited zeroization). Treat it as a building block and learning artifact.
+This repository is not intended to be a fully-featured production password manager (no sync, no clipboard integration, limited zeroization). Treat it as a building block and learning artifact.
 
 Project structure (current)
 --------------------------
 
 High-level file layout (important files):
 
-- `Cargo.toml` — dependency manifest and optional feature flags (e.g., `clipboard`).
-- `src/main.rs` — CLI parsing and top-level wiring (subcommands, global flags like `--file`, `--no-backup`, `--no-clipboard`).
+- `Cargo.toml` — dependency manifest and dependencies.
+- `src/main.rs` — CLI parsing and top-level wiring (subcommands, global flags like `--file`, `--no-backup`).
 - `src/models.rs` — serde data models for vault envelope and entries.
 - `src/crypto.rs` — KDF (Argon2) and AES-GCM encrypt/decrypt helpers.
 - `src/storage.rs` — disk I/O helpers for reading/writing the JSON envelope, atomic writes and backups.
@@ -61,7 +61,7 @@ Typical operation flow (e.g., `get`):
 2. The code reads the JSON envelope and extracts KDF parameters and salt.
 3. The user is prompted for the master password (hidden). The code derives a 256-bit key using Argon2id and the stored salt/params.
 4. The key is used with AES-256-GCM and the stored nonce to decrypt the ciphertext into a JSON payload.
-5. The decrypted payload (a JSON array of entries) is parsed and the requested entry is printed or copied to the clipboard (if enabled).
+5. The decrypted payload (a JSON array of entries) is parsed and the requested entry is printed to stdout.
 
 On `add` or `rm`, the code performs the reverse: decrypts the payload, modifies the entries, re-encrypts the new payload with a fresh nonce, and performs an atomic write to replace the vault file (with a best-effort `.bak` copy of the previous file).
 
@@ -88,7 +88,7 @@ Why these specific crates and choices were made (concise rationale):
 - `rand`: secure randomness for salts, nonces, and password generation.
 - `base64`: compact encoding of binary fields for a JSON envelope.
 - `anyhow`: ergonomic error handling with context to produce helpful error messages during development and in logs.
-- `clipboard` (optional feature): convenience for copying passwords to the system clipboard; optional because some platforms and CI environments do not support it.
+
 
 Design trade-offs and notes:
 
@@ -108,7 +108,7 @@ Short-term/practical improvements (low-risk):
 Mid-term/security improvements:
 
 - Implement a `rekey` command that allows migrating KDF parameters and rotating the master password without losing entries.
-- Implement platform-specific secure clipboard clearing: use native APIs where available to better scrub clipboard contents and avoid leaving secrets in memory.
+
 - Support hardware-backed keys (YubiKey or TPM) as an optional unlock mechanism.
 
 Long-term/advanced features:
@@ -132,11 +132,7 @@ Run help (development):
 cargo run -- --help
 ```
 
-If you want clipboard support, build with the optional feature:
 
-```powershell
-cargo run --features clipboard -- get -n NAME --copy --timeout 10
-```
 
 Status (current)
 ----------------
@@ -149,7 +145,7 @@ What works now
 --------------
 - `vault init [--file PATH] [--force]` — initialize vault and set master password. Requires `--force` to overwrite existing vault.
 - `vault add -n NAME` — add an entry (prompts for username, URL, notes, password; auto-generate if empty).
-- `vault get -n NAME [--copy] [--timeout N]` — retrieve an entry; prints password or copies to clipboard (if built with `clipboard` feature). `--timeout` is intended to clear the clipboard after N seconds (best-effort).
+- `vault get -n NAME` — retrieve an entry and print password to stdout.
 - `vault rm -n NAME` — remove an entry.
 - `vault list` — list entry names.
 - `vault gen --length N [--symbols]` — generate a password locally.
@@ -209,14 +205,14 @@ What is implemented (positive guarantees):
 Known limitations and caveats (please read carefully):
 
 - Partial zeroization: while the derived key is zeroized on drop, not every transient plaintext buffer is currently wrapped with `Zeroizing` in every code path. Some decrypted bytes and intermediate Strings may remain in memory until the OS reclaims them. We plan to strengthen zeroization in a follow-up.
-- Clipboard behavior is best-effort: clipboard support is optional and only available when you build with the `clipboard` cargo feature. The `--timeout` option spawns a background thread that attempts to clear the clipboard after the requested seconds; this is best-effort and platform-dependent. For security-critical uses do not rely solely on this mechanism.
+
 - Backup policy is configurable at runtime: you can opt out of creating `.bak` files using the `--no-backup` flag on the CLI. (This flag is implemented.)
 - Cross-filesystem atomicity: the current atomic write uses `rename` which is atomic on the same filesystem but may fail or fall back to non-atomic behavior across mounted filesystems. The code attempts parent directory creation but does not handle every cross-filesystem edge case.
 - No rekey/migration utility: there is no `rekey` command yet. If you change KDF parameters in code or want to rotate your master password you'll need to implement a migration path or wait for the planned `rekey` command.
 - No remote or multi-device sync: this project is strictly local and does not attempt to sync vault files across machines.
 - Limited testing: unit and integration tests are not included yet. Before using this in production add tests covering serialization, encrypt/decrypt round-trips, and end-to-end CLI flows.
 
-Security recommendation: Treat this project as an educational prototype. If you plan to use it for real secrets, audit the code, add comprehensive tests, and consider platform-specific secure-erase strategies for cleared clipboard contents and memory.
+Security recommendation: Treat this project as an educational prototype. If you plan to use it for real secrets, audit the code, add comprehensive tests, and consider platform-specific secure-erase strategies for memory handling.
 
 Usage examples
 --------------
@@ -239,10 +235,10 @@ Add an entry:
 cargo run -- add -n mysite
 ```
 
-Get an entry and copy to clipboard (requires building with clipboard feature):
+Get an entry and print password:
 
 ```powershell
-cargo run --features clipboard -- get -n mysite --copy --timeout 10
+cargo run -- get -n mysite
 ```
 
 List entries:
@@ -272,7 +268,7 @@ cargo run -- add -n testsite --file C:\temp\vault.test.json.enc
 # List entries
 cargo run -- list --file C:\temp\vault.test.json.enc
 
-# Get an entry and print password (no clipboard)
+# Get an entry and print password
 cargo run -- get -n testsite --file C:\temp\vault.test.json.enc
 
 # Remove the test entry
@@ -288,7 +284,7 @@ Developer notes & next steps
 - Add `rekey` to migrate KDF params and re-encrypt with a new key.
 - Harden zeroization: wrap decrypted plaintext buffers in `Zeroizing` and scrub temporary variables.
 - Add optional `--no-backup` and make backup behavior configurable.
-- Improve clipboard clearing (OS-specific implementations behind feature flags).
+
 - Add GitHub Actions for `cargo fmt -- --check`, `cargo clippy`, and `cargo test`.
 
 Contributing

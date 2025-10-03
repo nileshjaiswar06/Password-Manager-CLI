@@ -1,19 +1,23 @@
-use tempfile::NamedTempFile;
 use rand::RngCore;
+use tempfile::NamedTempFile;
 
-use vault::crypto;
-use vault::storage;
-use vault::VaultFile;
-use vault::Entry;
 use base64::{engine::general_purpose, Engine as _};
 use serde_json::json;
+use vault::crypto;
+use vault::storage;
+use vault::Entry;
+use vault::VaultFile;
 
 #[test]
 fn encrypt_decrypt_and_storage_roundtrip() -> anyhow::Result<()> {
     let password = "test-master";
     let mut salt = [0u8; 16];
     rand::thread_rng().fill_bytes(&mut salt);
-    let params = crypto::KdfParams { mem_kib: 32, iterations: 1, parallelism: 1 };
+    let params = crypto::KdfParams {
+        mem_kib: 32,
+        iterations: 1,
+        parallelism: 1,
+    };
     let keyz = crypto::derive_key(password, &salt, &params)?;
     let key: &[u8; 32] = &*keyz;
 

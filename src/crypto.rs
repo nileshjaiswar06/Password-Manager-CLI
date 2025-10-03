@@ -1,8 +1,8 @@
-use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use aes_gcm::aead::Aead;
-use argon2::{Argon2, Params, Version, Algorithm};
-use rand::RngCore;
+use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use anyhow::Result;
+use argon2::{Algorithm, Argon2, Params, Version};
+use rand::RngCore;
 use zeroize::Zeroizing;
 
 #[derive(Debug, Clone)]
@@ -17,7 +17,6 @@ pub fn generate_salt(len: usize) -> Vec<u8> {
     rand::thread_rng().fill_bytes(&mut v);
     v
 }
-
 
 // aes-256-gcm is used for encryption and decryption of data
 // argon2 is used for key derivation from the master password
@@ -53,21 +52,24 @@ pub fn decrypt(ciphertext: &[u8], key: &[u8; 32], nonce: &[u8]) -> Result<Vec<u8
     Ok(pt)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
-    use crate::storage;
     use crate::models::VaultFile;
-    use serde_json::json;
+    use crate::storage;
     use base64::{engine::general_purpose, Engine as _};
+    use serde_json::json;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn crypto_roundtrip() -> anyhow::Result<()> {
         let password = "unit-test";
         let salt = generate_salt(16);
-        let params = KdfParams { mem_kib: 32, iterations: 1, parallelism: 1 };
+        let params = KdfParams {
+            mem_kib: 32,
+            iterations: 1,
+            parallelism: 1,
+        };
         let keyz = derive_key(password, &salt, &params)?;
         let key: &[u8; 32] = &*keyz;
 
@@ -80,7 +82,7 @@ mod tests {
 
     #[test]
     fn storage_roundtrip_with_envelope() -> anyhow::Result<()> {
-    let entries: Vec<crate::models::Entry> = vec![];
+        let entries: Vec<crate::models::Entry> = vec![];
         let pt = serde_json::to_vec(&entries)?;
         let key = [0u8; 32];
         let (ct, nonce) = encrypt(&pt, &key)?;

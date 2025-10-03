@@ -1,11 +1,9 @@
 use assert_cmd::Command;
-use tempfile::NamedTempFile;
 use predicates::prelude::*;
+use tempfile::NamedTempFile;
 
-// Note: This test is ignored because rpassword::read_password() requires a TTY and hangs when stdin is piped in automated tests. To test manually, run:
-// cargo build && target/debug/vault.exe -f test.enc init
+// Integration test for CLI flow using VAULT_PASSWORD env var for non-interactive testing
 #[test]
-#[ignore]
 fn init_add_list_remove_flow() -> anyhow::Result<()> {
     // Use a temp file for the vault
     let tmp = NamedTempFile::new()?;
@@ -14,34 +12,60 @@ fn init_add_list_remove_flow() -> anyhow::Result<()> {
     // Ensure the path does not exist so `init` can create it
     std::fs::remove_file(path).ok();
 
-    // init
+    // init - uses VAULT_PASSWORD env var, no stdin required
     let mut cmd = Command::cargo_bin("vault")?;
-    cmd.arg("-f").arg(path).arg("init");
-    cmd.write_stdin("password\n")
+    cmd.env("VAULT_PASSWORD", "test-master-password")
+        .arg("-f")
+        .arg(path)
+        .arg("init")
         .assert()
         .success()
         .stdout(predicate::str::contains("Vault initialized"));
 
-    // add (we'll provide username, url, notes, empty password to auto-gen)
+    // add - provide entry details via stdin, master password from env
     let mut cmd = Command::cargo_bin("vault")?;
-    cmd.arg("-f").arg(path).arg("add").arg("-n").arg("t1");
-    cmd.write_stdin("password\nalice\nhttps://example.com\nnotes\n\n")
+    cmd.env("VAULT_PASSWORD", "test-master-password")
+        .env("ENTRY_PASSWORD", "test-entry-password")
+        .arg("-f")
+        .arg(path)
+        .arg("add")
+        .arg("-n")
+        .arg("testentry")
+        .write_stdin("alice\nhttps://example.com\ntest notes\n")
         .assert()
         .success()
         .stdout(predicate::str::contains("Entry added"));
 
     // list
     let mut cmd = Command::cargo_bin("vault")?;
-    cmd.arg("-f").arg(path).arg("list");
-    cmd.write_stdin("password\n")
+    cmd.env("VAULT_PASSWORD", "test-master-password")
+        .arg("-f")
+        .arg(path)
+        .arg("list")
         .assert()
         .success()
-        .stdout(predicate::str::contains("- t1"));
+        .stdout(predicate::str::contains("- testentry"));
+
+    // get
+    let mut cmd = Command::cargo_bin("vault")?;
+    cmd.env("VAULT_PASSWORD", "test-master-password")
+        .arg("-f")
+        .arg(path)
+        .arg("get")
+        .arg("-n")
+        .arg("testentry")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Password: test-entry-password"));
 
     // rm
     let mut cmd = Command::cargo_bin("vault")?;
-    cmd.arg("-f").arg(path).arg("rm").arg("-n").arg("t1");
-    cmd.write_stdin("password\n")
+    cmd.env("VAULT_PASSWORD", "test-master-password")
+        .arg("-f")
+        .arg(path)
+        .arg("rm")
+        .arg("-n")
+        .arg("testentry")
         .assert()
         .success()
         .stdout(predicate::str::contains("Entry removed"));
