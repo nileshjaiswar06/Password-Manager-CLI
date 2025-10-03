@@ -12,6 +12,12 @@ env:
 jobs:
   test:
     name: Test Suite
+    - name: Install Rust (actions-rs)
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        components: rustfmt,clippy
+        override: true
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -46,6 +52,12 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
       env:
+    - name: Install Rust (actions-rs)
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        components: rustfmt,clippy
+        override: true
         VAULT_PASSWORD: test-password
         
     - name: Build release
