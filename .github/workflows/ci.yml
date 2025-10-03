@@ -23,6 +23,11 @@ jobs:
       with:
         components: rustfmt,clippy
       
+    - name: Ensure rustfmt & clippy (fallback)
+      run: |
+        rustup component add --toolchain stable rustfmt || true
+        rustup component add --toolchain stable clippy || true
+      
     - name: Cache dependencies
       uses: actions/cache@v3
       with:
@@ -55,6 +60,13 @@ jobs:
     
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt,clippy
+
+    - name: Ensure rustfmt & clippy (fallback)
+      run: |
+        rustup component add --toolchain stable rustfmt || true
+        rustup component add --toolchain stable clippy || true
       
     - name: Run tests
       run: cargo test --verbose
