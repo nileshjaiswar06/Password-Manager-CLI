@@ -2,6 +2,18 @@
 
 A memory-safe Rust CLI vault that generates, encrypts, and stores passwords locally.
 
+[![CI](https://github.com/nileshjaiswar06/Password-Manager-CLI/actions/workflows/ci.yml/badge.svg)](https://github.com/nileshjaiswar06/Password-Manager-CLI/actions/workflows/ci.yml)
+
+Quick usage (build & run):
+
+```powershell
+# Build release
+cargo build --release
+
+# Run help
+cargo run -- --help
+```
+
 This project demonstrates secure, offline password management using Rust's safety guarantees. It uses Argon2id for key derivation and AES-256-GCM for authenticated encryption.
 
 Purpose & goals

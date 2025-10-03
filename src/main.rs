@@ -1,12 +1,7 @@
-mod crypto;
-mod models;
-mod storage;
-mod vault;
-
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use crate::vault::VaultApp;
+use vault::VaultApp;
 
 #[derive(Parser)]
 #[command(name = "vault")]
