@@ -2,7 +2,27 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    b      - name: Ensure rustfmt & clippy (fallback)
+        run: |
+          rustup component add --toolchain stable rustfmt || true
+          rustup component add --toolchain stable clippy || true
+
+      - name: Debug Rust toolchain state
+        run: |
+          echo "=== Rust toolchain debug ==="
+          rustc --version
+          cargo --version
+          rustup show
+          echo "=== Available components ==="
+          rustup component list
+          echo "=== Installed components ==="
+          rustup component list --installed
+          echo "=== PATH ==="
+          echo $PATH
+          echo "=== Which cargo-fmt ==="
+          which cargo-fmt || echo "cargo-fmt not found in PATH"
+
+      - name: Cache dependenciess: [ main ]
   pull_request:
   name: CI
 
